@@ -108,8 +108,8 @@ def segment_pipeline(
     # Step 1: 分群计算
     segment_result = segment_svc.compute_segment(rule_id, events)
 
-    # Step 2: 同期群分析
-    cohort_result = cohort_svc.run_cohort_analysis(1, events)
+    # Step 2: 同期群分析（与分群列表共用同一份有效圈选，取全有效回访记录）
+    cohort_result = cohort_svc.get_retention_for_segment(str(rule_id), events)
 
     # Step 3: 归因模型
     active_models = attribution_svc.get_active_models()
@@ -249,6 +249,38 @@ def governance_pipeline(
         "topological_order": topo,
         "drill_result": drill_result,
     }
+
+
+# ---- 分群留存：分群列表与同期群分析共用同一份有效圈选 ----
+@app.post("/api/analytics/segment/{rule_id}/retention")
+def segment_retention(rule_id: int, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """按分群有效圈选计算留存率：全量命中成员 + 全部有效回访记录，含分子分母。"""
+    cohort_svc = service_for("cohort_analysis")
+    if cohort_svc is None:
+        return {"ok": False, "message": "同期群服务未就绪"}
+    if events is None:
+        events = _sample_user_events()
+    return cohort_svc.get_retention_for_segment(str(rule_id), events)
+
+
+@app.get("/api/analytics/segment/{rule_id}/versions")
+def segment_versions(rule_id: int) -> dict[str, Any]:
+    """回查该分群历次实际生效的圈选版本。"""
+    segment_svc = service_for("segment_rule")
+    if segment_svc is None:
+        return {"ok": False, "message": "分群服务未就绪"}
+    versions = segment_svc.list_selection_versions(rule_id)
+    return {"ok": True, "rule_id": rule_id, "versions": versions}
+
+
+@app.get("/api/analytics/segment/{rule_id}/reports")
+def segment_reports(rule_id: int) -> dict[str, Any]:
+    """回查该分群历次留存报告（含圈选版本与分子分母）。"""
+    cohort_svc = service_for("cohort_analysis")
+    if cohort_svc is None:
+        return {"ok": False, "message": "同期群服务未就绪"}
+    reports = cohort_svc.list_segment_reports(rule_id)
+    return {"ok": True, "rule_id": rule_id, "reports": reports}
 
 
 # ----  天平 ----

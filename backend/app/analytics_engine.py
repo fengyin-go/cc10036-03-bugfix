@@ -205,6 +205,8 @@ class CohortMatrix:
     cohort_ids: list[str]
     period_labels: list[str]
     retention_matrix: list[list[float]]  # [cohort_index][period_index] = 保留率
+    cohort_sizes: list[int] = field(default_factory=list)  # 每个同期群的分母（初始事件人数）
+    retained_counts: list[list[int]] = field(default_factory=list)  # [cohort][period] = 留存分子
 
 
 def compute_cohort_retention(
@@ -251,17 +253,22 @@ def compute_cohort_retention(
         cohort_buckets[week].add(uid)
 
     sorted_weeks = sorted(cohort_buckets)
-    cohort_ids = [_week_label(w, period_days) for w in sorted_weeks]
+    cohort_ids = [_week_label(w * period_seconds, period_days) for w in sorted_weeks]
     matrix: list[list[float]] = []
+    cohort_sizes: list[int] = []
+    retained_counts: list[list[int]] = []
 
     for wi, week in enumerate(sorted_weeks):
         users_in_cohort = cohort_buckets[week]
         total = len(users_in_cohort)
+        cohort_sizes.append(total)
         if total == 0:
             matrix.append([0.0] * max_periods)
+            retained_counts.append([0] * max_periods)
             continue
         cohort_start = week * period_seconds
         period_rates: list[float] = []
+        period_counts: list[int] = []
         for p in range(max_periods):
             period_end = cohort_start + (p + 1) * period_seconds
             retained = 0
@@ -271,13 +278,17 @@ def compute_cohort_retention(
                     retained += 1
             rate = round(retained / total * 100, 2)
             period_rates.append(rate)
+            period_counts.append(retained)
         matrix.append(period_rates)
+        retained_counts.append(period_counts)
 
     period_labels = [f"周{i + 1}" for i in range(max_periods)]
     return CohortMatrix(
         cohort_ids=cohort_ids,
         period_labels=period_labels,
         retention_matrix=matrix,
+        cohort_sizes=cohort_sizes,
+        retained_counts=retained_counts,
     )
 
 
